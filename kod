@@ -1,0 +1,306 @@
+//#include <DallasTemperature.h>
+
+#include <OneWire.h>
+#include <DS18B20.h>
+#include "DHT.h"
+#include <SoftwareSerial.h>
+#include <virtuabotixRTC.h>
+#include "HX711.h"
+
+//********OBSŁUGA WAGI*********
+#define calibration_factor -22050 //wsp. kalibracji
+#define DOUT  6
+#define CLK  7
+HX711 scale;
+
+//********OBSLUGA RTC**********
+virtuabotixRTC myRTC(12, 13, 9);
+
+//********OBSLUGA WYSYLANIA SMS**********
+SoftwareSerial sim(2, 3);
+//String number = "+48666150133";
+//String number = "+48792768655";
+String number = "+48666150133";
+//********OBSLUGA CZUJNIKOW WILGOTNOSCI**********
+//Czujnik wilg. zewn.
+#define DHTPIN11 10     // what pin we're connected to
+#define DHTTYPE11 DHT11   // DHT 11
+DHT dht11(DHTPIN11, DHTTYPE11);
+ 
+//Czujnik wilg. wewn.
+#define DHTPIN22 11     // what pin we're connected to
+#define DHTTYPE22 DHT11   // DHT 22
+DHT dht22(DHTPIN22, DHTTYPE22);
+
+//********OBSLUGA CZUJNIKOW TEMPERATURY**********
+#define ONEWIRE_PIN 8    // Numer pinu do którego podłaczasz czujnik
+#define SENSORS_NUM 2    // Ilość czujników temperatury
+
+// Adresy czujników
+const byte address[SENSORS_NUM][8] PROGMEM = {
+  0x28, 0xC3, 0x46, 0x75, 0xD0, 0x1, 0x3C, 0x44,
+  0x28, 0x9F, 0x51, 0x75, 0xD0, 0x1, 0x3C, 0x3A
+};
+
+OneWire onewire(ONEWIRE_PIN);
+DS18B20 sensors(&onewire);
+
+//********ZMIENNE GLOBALNE DO WYSLANIA**********
+float ultemp, ulhum, outtemp, outhum;
+double waga;
+int godzina, minuta, sekunda;
+char incomingChar;
+char temp1;
+volatile bool chuj = false;
+
+void setup() {
+
+  while(!Serial);
+  Serial.begin(9600);
+  
+  Serial.println("Wait few seconds...");
+  delay(5000);
+  Serial.println("System Started...");
+  sim.begin(9600);
+  delay(1000);
+  sim.print("AT+CMGF=1\r"); 
+  delay(100);
+  // Set module to send SMS data to serial out upon receipt 
+  sim.print("AT+CNMI=2,2,0,0,0\r");
+  delay(100);
+
+  sensors.begin();
+  sensors.request();
+
+  dht11.begin();
+  dht22.begin();
+
+  scale.begin(DOUT, CLK);
+  scale.set_scale(calibration_factor);
+  //scale.tare();
+}
+
+void loop() {
+  delay(1000);
+
+  if(Serial.available())
+  {
+    char temp = Serial.read();
+    if(temp == 'c'){
+      scale.tare();
+      Serial.println(waga);
+    }
+  }
+  Serial.println(waga);
+  myRTC.updateTime();
+  Serial.print("Current Date / Time: ");
+  Serial.print(myRTC.dayofmonth);
+  Serial.print("/");
+  Serial.print(myRTC.month);
+  Serial.print("/");
+  Serial.print(myRTC.year);
+  Serial.print("  ");
+  Serial.print(myRTC.hours);
+  Serial.print(":");
+  Serial.print(myRTC.minutes);
+  Serial.print(":");
+  Serial.println(myRTC.seconds);
+  //godzina = myRTC.hours;
+  //minuta = myRTC.minutes;
+  //sekunda = myRTC.seconds;
+  //if(Serial.available()){
+   //char temp = Serial.read();
+    if(myRTC.hours == 17 && myRTC.minutes == 25  && myRTC.seconds == 10){
+      dzialoj();
+    }
+      
+    if((myRTC.hours == 17 && myRTC.minutes ==16 && myRTC.seconds == 10)){
+      dzialoj();
+    }
+
+   
+ // }
+  /*if(Serial.available())
+  {
+    char temp = Serial.read();
+    //if(temp == 'c')
+    if(temp == 'c' || temp1 == 'a')
+    {
+      if(readData()) 
+      {
+        SendMessage();
+        Serial.print("UL Humidity: "); 
+        Serial.println(ulhum);
+        Serial.print("OUT Humidity: "); 
+        Serial.println(outhum);
+        Serial.print("UL Temperature: "); 
+        Serial.println(ultemp);
+        Serial.print("OUT Temperature: "); 
+        Serial.println(outtemp);
+        
+      }
+    } 
+  }*/  
+}
+
+void dzialoj(){
+  while(!readData()){chuj = !chuj;}
+
+//        SendMessage1();
+        SendMessage();
+        Serial.print("UL Humidity: "); 
+        Serial.println(ulhum);
+        Serial.print("OUT Humidity: "); 
+        Serial.println(outhum);
+        Serial.print("UL Temperature: "); 
+        Serial.println(ultemp);
+        Serial.print("OUT Temperature: "); 
+        Serial.println(outtemp);
+        Serial.print("Waga: "); 
+        Serial.println(waga);
+        delay(500);
+        
+
+      delay(2000);
+}
+/*boolean readHour(){
+
+  myRTC.updateTime();
+  Serial.print("Current Date / Time: ");
+  Serial.print(myRTC.dayofmonth);
+  Serial.print("/");
+  Serial.print(myRTC.month);
+  Serial.print("/");
+  Serial.print(myRTC.year);
+  Serial.print("  ");
+  Serial.print(myRTC.hours);
+  Serial.print(":");
+  Serial.print(myRTC.minutes);
+  Serial.print(":");
+  Serial.println(myRTC.seconds)
+    return true;
+  else
+    return false;
+}*/
+
+boolean readData() {
+  //Read humidity
+  outhum = dht11.readHumidity();
+  // Read temperature as Celsius
+  ulhum = dht22.readHumidity();
+
+  waga = scale.get_units(), 1;
+ /* if (sensors.available())
+  {
+    for (byte i=0; i<SENSORS_NUM; i++)
+    {
+      float temperature = sensors.readTemperature(FA(address[i]));
+
+      Serial.print(F("#"));
+      Serial.print(i);
+      Serial.print(F(": "));
+      Serial.print(temperature);
+      Serial.println(F(" 'C"));
+    }
+
+    sensors.request();
+  }*/
+  
+  if (sensors.available())
+  {
+    outtemp = sensors.readTemperature(FA(address[0]));
+    ultemp = sensors.readTemperature(FA(address[1]));
+    sensors.request();
+  }
+  
+  // Compute temperature values in Celcius
+  //t = dht.computeHeatIndex(t,h,false);
+ 
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(outhum) || isnan(ulhum)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return false;
+  }
+  /*
+  Serial.println("UL Humidity: "); 
+  Serial.print(ultemp);
+  Serial.println("OUT Humidity: "); 
+  Serial.print(outtemp);
+  Serial.println("UL Temperature: "); 
+  Serial.print(ultemp);
+  Serial.println("OUT Temperature: "); 
+  Serial.print(outtemp);
+  */
+  //Uncomment to print temperature in Farenheit
+  //Serial.print(f);
+  //Serial.print(" *F\t");
+  return true;
+}
+
+void SendMessage()
+{
+  sim.println("AT+CMGF=1");
+  delay(1000);
+  sim.println("AT+CMGS=\"" + number + "\"\r");
+  delay(1000);
+  String SMS = ("UL Temp "+String(ultemp)+"*C"+"  Temp "+String(outtemp)+"*C"+"  UL Wilg "+String(ulhum)+"%"+"  Zewn "+String(outhum)+"%"+"  Waga "+String(waga));
+ //String SMS = "SIEMKA";
+  sim.println(SMS);
+  delay(100);
+  sim.println((char)26);
+  delay(1000);
+}
+
+//void SendMessage1()
+//{
+//  sim.println("AT+CMGF=1");
+//  delay(1000);
+//  sim.println("AT+CMGS=\"" + number1 + "\"\r");
+//  delay(1000);
+//  String SMS = ("UL Temp "+String(ultemp)+"*C"+"  Temp "+String(outtemp)+"*C"+"  UL Wilg "+String(ulhum)+"%"+"  Zewn "+String(outhum)+"%"+"  Waga "+String(waga));
+// //String SMS = "SIEMKA";
+//  sim.println(SMS);
+//  delay(100);
+//  sim.println((char)26);
+//  delay(1000);
+//}
+//void zegar(){
+//  
+//}
+
+/*boolean SMSRequest() {
+  if(sim.available() >0) {
+    incomingChar=sim.read();
+    if(incomingChar=='S') {
+      delay(10);
+      Serial.print(incomingChar);
+      incomingChar=sim.read();
+      if(incomingChar =='T') {
+        delay(10);
+        Serial.print(incomingChar);
+        incomingChar=sim.read();
+        if(incomingChar=='A') {
+          delay(10);
+          Serial.print(incomingChar);
+          incomingChar=sim.read();
+          if(incomingChar=='T') {
+            delay(10);
+            Serial.print(incomingChar);
+            incomingChar=sim.read();
+            if(incomingChar=='U') {
+              delay(10);
+                Serial.print(incomingChar);
+                incomingChar=sim.read();
+                if(incomingChar=='S') {
+                 delay(10);
+              Serial.print(incomingChar);
+              Serial.print("...Request Received \n");
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}*/

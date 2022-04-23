@@ -1,1 +1,1 @@
-UL do pszczół kurde faja
+UL

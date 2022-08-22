@@ -96,7 +96,7 @@ void setup() {
   SerialMon.begin(115200);
   randomSeed(33);
 
-  client.init("matek", "matek1234", "http://51.68.141.235:8088/");
+  client.init("", "", "http://51.68.141.235:8088/");
   
   SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
   setupModem();
